@@ -30,7 +30,7 @@ func createDB(user, pass, host, port, dbName string) {
 }
 
 // Create database if it doesn't exist, and load initial fixtures.
-func initializeDB() {
+func initializeDB() *sql.DB {
 	// Env vars from local_config.env
 	user := os.Getenv("DB_USER")
 	pass := os.Getenv("DB_PASS")
@@ -77,6 +77,7 @@ func initializeDB() {
             action varchar(24) NOT NULL,
             date timestamptz NOT NULL,
             actor varchar(24) REFERENCES users(sid),
+            story varchar(24) REFERENCES stories(sid),
             user2 varchar(24) REFERENCES users(sid)
         )`)
 	if err != nil {
@@ -102,12 +103,14 @@ func initializeDB() {
 	if err != nil {
 		log.Printf("[INFO] Create table notifications error: %s", err)
 	}
-
+	log.Printf("[DEBUG] Loading initial fixtures...")
 	hooked.LoadFixtures(db) // in loader.go
+	log.Printf("[DEBUG] Done loading fixtures")
+	return db
 }
 
 func main() {
 	log.Println("Connecting to db...")
-	initializeDB()
-	hooked.Serve("8086")
+	db := initializeDB()
+	hooked.Serve(db, "8086")
 }

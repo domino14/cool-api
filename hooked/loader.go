@@ -8,28 +8,6 @@ import (
 	"github.com/satori/go.uuid"
 )
 
-// Mainly for loading the initial fixtures.
-
-type User struct {
-	FirstName string `json:"firstname"`
-	LastName  string `json:"lastname"`
-	ID        string `json:"_id"`
-}
-
-type Story struct {
-	Title  string `json:"title"`
-	Author string `json:"author"`
-	ID     string `json:"_id"`
-}
-
-type Activity struct {
-	Action string `json:"action"`
-	Date   string `json:"date"`
-	Actor  string `json:"actor"`
-	User2  string `json:"user2"`
-	ID     string `json:"_id"`
-}
-
 func getModels() ([]Activity, []Story, []User) {
 	dat, err := ioutil.ReadFile("./fixtures/activities.json")
 	if err != nil {

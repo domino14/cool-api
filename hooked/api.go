@@ -1,14 +1,21 @@
 package hooked
 
 import (
-	"io/ioutil"
+	"database/sql"
+	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 
 	"github.com/gorilla/mux"
 )
 
+// Note: We eventually want to make this part of the context instead of a
+// global variable, but this is OK for demonstration purposes...
+var db *sql.DB
+
 const (
+	Success         = `{"msg": "OK"}`
 	JSONContentType = "application/json; charset=UTF-8"
 )
 
@@ -17,17 +24,33 @@ func getNotificationsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Tried to get notification for id = " + vars["id"]))
 }
 
-func postActivityHandler(w http.ResponseWriter, r *http.Request) {
-	body, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		log.Printf("[ERROR] event=read-body err=%q", err)
-		http.Error(w, "Bad body", http.StatusBadRequest)
-		return
-	}
-	w.Write([]byte("Tried to post activity " + string(body)))
+func sendSuccess(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", JSONContentType)
+	fmt.Fprint(w, Success)
 }
 
-func Serve(port string) {
+func postActivityHandler(w http.ResponseWriter, r *http.Request) {
+	decoder := json.NewDecoder(r.Body)
+	var a Activity
+	err := decoder.Decode(&a)
+	if err != nil {
+		log.Printf("[ERROR] event=json-decode err=%q", err)
+		http.Error(w, "Bad JSON body", http.StatusBadRequest)
+		return
+	}
+	err = a.Validate(db)
+	if err != nil {
+		log.Printf("[ERROR] event=validation-error err=%q", err)
+		http.Error(w, "Bad activity: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	log.Printf("[DEBUG] Got new activity: %v", a)
+	sendSuccess(w)
+}
+
+func Serve(d *sql.DB, port string) {
+	db = d
 	r := mux.NewRouter()
 	r.HandleFunc("/user/{id}/notifications",
 		getNotificationsHandler).Methods("GET")
