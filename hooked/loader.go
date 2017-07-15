@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"io/ioutil"
+
+	"github.com/satori/go.uuid"
 )
 
 // Mainly for loading the initial fixtures.
@@ -58,6 +60,7 @@ func getModels() ([]Activity, []Story, []User) {
 // LoadFixtures destructively loads fixtures, wiping the slate every time.
 func LoadFixtures(db *sql.DB) {
 	activities, stories, users := getModels()
+	db.Exec("DELETE from notifications")
 	db.Exec("DELETE from activities")
 	db.Exec("DELETE from stories")
 	db.Exec("DELETE from users")
@@ -90,6 +93,27 @@ func LoadFixtures(db *sql.DB) {
 	for _, activity := range activities {
 		stmt.Exec(activity.ID, activity.Action, activity.Date, activity.Actor,
 			activity.User2)
+	}
+	tx.Commit()
+
+	// Now pre-compute notifications table from existing activities,
+	// so we can begin querying the API right away.
+	preComputeNotifications(db, activities)
+}
+
+// Pre-calculate notifications from initial fixtures. Since all activities
+// in fixtures are just `follow`, the initial notifications in this table
+// will be very similar to the notifications in the activities table.
+func preComputeNotifications(db *sql.DB, activities []Activity) {
+	tx, _ := db.Begin()
+	stmt, _ := tx.Prepare(`
+        INSERT INTO notifications (id, notified, actor, action, story)
+        VALUES ($1, $2, $3, $4, $5)
+    `)
+	// Add notification to followed user (user2)
+	for _, activity := range activities {
+		stmt.Exec(uuid.NewV4(),
+			activity.User2, activity.Actor, activity.Action, nil)
 	}
 	tx.Commit()
 }

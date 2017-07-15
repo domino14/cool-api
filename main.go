@@ -82,6 +82,27 @@ func initializeDB() {
 	if err != nil {
 		log.Printf("[INFO] Create table activities error: %s", err)
 	}
+
+	// Technically notifications can be computed from the activities,
+	// but that is inefficient. Let's instead create a notifications
+	// table.
+	// In this case, the `notified` is the user whose notification we are getting.
+	// The `actor` is the performer of the action, which is not necessarily
+	// the same as the notified user.
+	// In the case of a follow, it will be mapped to `user2` in the API output.
+	// Story is null if this is a follow.
+	_, err = db.Exec(`
+        CREATE TABLE IF NOT EXISTS notifications(
+            id uuid primary key,
+            notified varchar(24) REFERENCES users(sid),
+            actor varchar(24) REFERENCES users(sid),
+            action varchar(24) NOT NULL,
+            story varchar(24) REFERENCES stories(sid)
+        )`)
+	if err != nil {
+		log.Printf("[INFO] Create table notifications error: %s", err)
+	}
+
 	hooked.LoadFixtures(db) // in loader.go
 }
 
