@@ -1,6 +1,7 @@
-FROM golang:alpine
-ENV GOPATH=/go
-ADD . /go/src/github.com/domino14/cool-api
-WORKDIR /go/src/github.com/domino14/cool-api
-
+FROM alpine:latest
+RUN apk add --no-cache go libc-dev git
 EXPOSE 8086
+ENV GOPATH /go
+
+CMD ['go', 'run', 'main.go']
+
