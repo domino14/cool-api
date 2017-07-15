@@ -52,9 +52,16 @@ func postActivityHandler(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[ERROR] event=saving-activity err=%q", err)
 		http.Error(w, "Could not save activity: "+err.Error(),
 			http.StatusInternalServerError)
+		return
 	}
-	// Note that this function spawns a goroutine and does not block.
-	a.Notify()
+	// Send push notifications
+	err = a.PushNotify()
+	if err != nil {
+		log.Printf("[ERROR] event=push-notification err=%q", err)
+		http.Error(w, "Push notification error: "+err.Error(),
+			http.StatusInternalServerError)
+		return
+	}
 	sendSuccess(w)
 }
 

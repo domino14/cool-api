@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/domino14/cool-api/push"
 	"github.com/satori/go.uuid"
 )
 
@@ -22,6 +23,10 @@ type User struct {
 	FirstName string `json:"firstname"`
 	LastName  string `json:"lastname"`
 	ID        string `json:"_id"`
+}
+
+func (u User) name() string {
+	return u.FirstName + " " + u.LastName
 }
 
 type Story struct {
@@ -82,10 +87,15 @@ func (a *Activity) Validate(db *sql.DB) error {
 			return err
 		}
 	}
+
 	if a.Story != "" {
 		_, err := getStory(db, a.Story)
 		if err != nil {
 			return err
+		}
+	} else {
+		if a.Action == ActionLove || a.Action == ActionComment || a.Action == ActionRead {
+			return errors.New("You must provide a story ID for this action")
 		}
 	}
 	return nil
@@ -116,19 +126,14 @@ func createNotifications(db *sql.DB, a *Activity) error {
 	// Generate the notifications.
 	/*
 	   - user follows another user
-	       - send push notification to followed user
 	       - add notification to followed user
 	   - user reads a story
-	       - send push notification to story author
 	       - add notification to actor’s followers
 	   - user loves a story
-	       - send push notification to story author
 	       - add notification to actor’s followers
 	   - user writes a story
-	       - send push notification to all followers
 	       - add notification to all followers
 	   - user comments on a story
-	       - send push notification to story’s author
 	       - add notification to actor’s followers
 	*/
 	var err error
@@ -142,6 +147,7 @@ func createNotifications(db *sql.DB, a *Activity) error {
 		if err != nil {
 			return err
 		}
+		// no need for break, switch doesn't fallthrough in Go
 	case ActionRead, ActionLove /* 😍 */, ActionWrite, ActionComment:
 		// Add notification to actor's followers.
 		followers, err := getFollowerIDs(db, a.Actor)
@@ -150,12 +156,18 @@ func createNotifications(db *sql.DB, a *Activity) error {
 		}
 		log.Printf("[DEBUG] Action=%v, adding %v notifications to followers",
 			a.Action, len(followers))
+		var story interface{}
+		story = a.Story
+		if a.Action == ActionWrite {
+			// No spec for creating a new story, so for now let's set it to NULL
+			story = nil
+		}
 		for _, followerID := range followers {
 			_, err = db.Query(`
                    INSERT into notifications
                    (id, notified_id, actor_id, action, date, story_id)
                    VALUES ($1, $2, $3, $4, $5, $6)
-            `, uuid.NewV4(), followerID, a.Actor, a.Action, now(), a.Story)
+            `, uuid.NewV4(), followerID, a.Actor, a.Action, now(), story)
 			if err != nil {
 				return err
 			}
@@ -186,15 +198,69 @@ func (a *Activity) Save(db *sql.DB) error {
 	return err
 }
 
-func (a *Activity) Notify() {
-	// This goroutine, and the fact that the API in general uses goroutines
-	// for HTTP requests, allows the API to scale more easily. We don't block
-	// until all push notifications are delivered, instead we hand them off
-	// in a goroutine and exit. This could be a separate microservice
-	// or job queue later on.
-	go func() {
+func (a *Activity) PushNotify() error {
 
-	}()
+	/*
+	   - user follows another user
+	       - send push notification to followed user
+	   - user reads a story
+	       - send push notification to story author
+	   - user loves a story
+	       - send push notification to story author
+	   - user writes a story
+	       - send push notification to all followers
+	   - user comments on a story
+	       - send push notification to story’s author
+	*/
+	switch a.Action {
+	case ActionFollow:
+		// Send push notification to followed user. (a.User2)
+		actor, err := getUser(db, a.Actor)
+		if err != nil {
+			return err
+		}
+		log.Printf("[DEBUG] Sending push notification to followed user")
+		push.Notify(a.User2, actor.name()+" started following you.")
+
+	case ActionRead, ActionLove, ActionComment:
+		// Send push notification to story's author
+		story, err := getStory(db, a.Story)
+		if err != nil {
+			return err
+		}
+		actor, err := getUser(db, a.Actor)
+		if err != nil {
+			return err
+		}
+
+		snippet := ""
+		if a.Action == ActionRead {
+			snippet = "just read"
+		} else if a.Action == ActionComment {
+			snippet = "commented on"
+		} else if a.Action == ActionLove {
+			snippet = "loves"
+		}
+		log.Printf("[DEBUG] Sending push notification to story's author")
+		push.Notify(story.Author, actor.name()+" "+snippet+" "+story.Title)
+
+	case ActionWrite:
+		// Send push notification to all actor's followers.
+		followers, err := getFollowerIDs(db, a.Actor)
+		if err != nil {
+			return err
+		}
+		author, err := getUser(db, a.Actor)
+		if err != nil {
+			return err
+		}
+		log.Printf("[DEBUG] Sending push notification to all of the writer's %v followers",
+			len(followers))
+		push.NotifyMultiple(followers,
+			author.name()+" just wrote a cool story. Check it out!")
+	}
+	return nil
+
 }
 
 func getUser(db *sql.DB, id string) (*User, error) {
