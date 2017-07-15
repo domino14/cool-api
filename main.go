@@ -6,12 +6,13 @@ import (
 	_ "github.com/lib/pq"
 	"log"
 	"os"
-	// "github.com/domino14/cool-api/hooked"
+
+	"github.com/domino14/cool-api/hooked"
 )
 
 // A database creation function. On production this shouldn't exist,
 // we need it here for initial bootstrapping.
-func createDB(user, pass, host, port, dbName string) error {
+func createDB(user, pass, host, port, dbName string) {
 	connString := fmt.Sprintf(
 		"postgres://%s:%s@%s:%s/?sslmode=disable", user, pass, host, port)
 	db, err := sql.Open("postgres", connString)
@@ -21,7 +22,11 @@ func createDB(user, pass, host, port, dbName string) error {
 	log.Printf("[DEBUG] Created db object")
 
 	_, err = db.Exec("CREATE DATABASE " + dbName)
-	return err
+
+	if err != nil {
+		// Probably OK, the database already exists.
+		log.Printf("[INFO] Error creating database: %s", err)
+	}
 }
 
 // Create database if it doesn't exist, and load initial fixtures.
@@ -33,11 +38,7 @@ func initializeDB() {
 	port := os.Getenv("DB_PORT")
 	dbName := os.Getenv("DB_NAME")
 
-	err := createDB(user, pass, host, port, dbName)
-	if err != nil {
-		// Probably OK, the database already exists.
-		log.Printf("[INFO] Error creating database: %s", err)
-	}
+	createDB(user, pass, host, port, dbName)
 
 	connString := fmt.Sprintf(
 		"postgres://%s:%s@%s:%s/%s?sslmode=disable", user, pass, host, port,
@@ -50,6 +51,38 @@ func initializeDB() {
 		log.Fatal(err)
 	}
 	log.Printf("[DEBUG] Connected to database %s", dbName)
+
+	// Create tables if they don't exist.
+	_, err = db.Exec(`
+        CREATE TABLE IF NOT EXISTS users(
+            sid varchar(24) primary key,
+            firstname varchar(40) NOT NULL,
+            lastname varchar(40) NOT NULL
+        )`)
+	if err != nil {
+		log.Printf("[INFO] Create table users error: %s", err)
+	}
+	_, err = db.Exec(`
+        CREATE TABLE IF NOT EXISTS stories(
+            sid varchar(24) primary key,
+            title varchar(128) NOT NULL,
+            author varchar(24) REFERENCES users(sid)
+        )`)
+	if err != nil {
+		log.Printf("[INFO] Create table stories error: %s", err)
+	}
+	_, err = db.Exec(`
+        CREATE TABLE IF NOT EXISTS activities(
+            sid varchar(24) primary key,
+            action varchar(24) NOT NULL,
+            date timestamptz NOT NULL,
+            actor varchar(24) REFERENCES users(sid),
+            user2 varchar(24) REFERENCES users(sid)
+        )`)
+	if err != nil {
+		log.Printf("[INFO] Create table activities error: %s", err)
+	}
+	hooked.LoadFixtures(db) // in loader.go
 }
 
 func main() {
