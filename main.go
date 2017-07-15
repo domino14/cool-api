@@ -109,4 +109,5 @@ func initializeDB() {
 func main() {
 	log.Println("Connecting to db...")
 	initializeDB()
+	hooked.Serve("8086")
 }
