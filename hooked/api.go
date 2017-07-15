@@ -46,6 +46,15 @@ func postActivityHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("[DEBUG] Got new activity: %v", a)
+
+	err = a.Save(db)
+	if err != nil {
+		log.Printf("[ERROR] event=saving-activity err=%q", err)
+		http.Error(w, "Could not save activity: "+err.Error(),
+			http.StatusInternalServerError)
+	}
+	// Note that this function spawns a goroutine and does not block.
+	a.Notify()
 	sendSuccess(w)
 }
 

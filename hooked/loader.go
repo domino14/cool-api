@@ -38,6 +38,7 @@ func getModels() ([]Activity, []Story, []User) {
 // LoadFixtures destructively loads fixtures, wiping the slate every time.
 func LoadFixtures(db *sql.DB) {
 	activities, stories, users := getModels()
+	db.Exec("DELETE from followers")
 	db.Exec("DELETE from notifications")
 	db.Exec("DELETE from activities")
 	db.Exec("DELETE from stories")
@@ -55,7 +56,7 @@ func LoadFixtures(db *sql.DB) {
 
 	tx, _ = db.Begin()
 	stmt, _ = tx.Prepare(`
-            INSERT INTO stories (sid, title, author)
+            INSERT INTO stories (sid, title, author_id)
             VALUES ($1, $2, $3)
         `)
 	for _, story := range stories {
@@ -65,7 +66,7 @@ func LoadFixtures(db *sql.DB) {
 
 	tx, _ = db.Begin()
 	stmt, _ = tx.Prepare(`
-            INSERT INTO activities (sid, action, date, actor, user2)
+            INSERT INTO activities (sid, action, date, actor_id, user2_id)
             VALUES ($1, $2, $3, $4, $5)
             `)
 	for _, activity := range activities {
@@ -77,6 +78,7 @@ func LoadFixtures(db *sql.DB) {
 	// Now pre-compute notifications table from existing activities,
 	// so we can begin querying the API right away.
 	preComputeNotifications(db, activities)
+	preComputeFollowers(db, activities)
 }
 
 // Pre-calculate notifications from initial fixtures. Since all activities
@@ -85,13 +87,30 @@ func LoadFixtures(db *sql.DB) {
 func preComputeNotifications(db *sql.DB, activities []Activity) {
 	tx, _ := db.Begin()
 	stmt, _ := tx.Prepare(`
-        INSERT INTO notifications (id, notified, actor, action, story)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO notifications (id, notified_id, actor_id, action, story_id, date)
+        VALUES ($1, $2, $3, $4, $5, $6)
     `)
 	// Add notification to followed user (user2)
 	for _, activity := range activities {
 		stmt.Exec(uuid.NewV4(),
-			activity.User2, activity.Actor, activity.Action, nil)
+			activity.User2, activity.Actor, activity.Action, nil, activity.Date)
+	}
+	tx.Commit()
+}
+
+func preComputeFollowers(db *sql.DB, activities []Activity) {
+	tx, _ := db.Begin()
+	// The test fixtures have at least one duplicate follow event,
+	// so add the DO NOTHING below :)
+	stmt, _ := tx.Prepare(`
+        INSERT INTO followers (user_id, follower_id)
+        VALUES ($1, $2)
+        ON CONFLICT DO NOTHING
+    `)
+
+	// Add notification to followed user (user2)
+	for _, activity := range activities {
+		stmt.Exec(activity.User2, activity.Actor)
 	}
 	tx.Commit()
 }

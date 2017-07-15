@@ -66,7 +66,7 @@ func initializeDB() *sql.DB {
         CREATE TABLE IF NOT EXISTS stories(
             sid varchar(24) primary key,
             title varchar(128) NOT NULL,
-            author varchar(24) REFERENCES users(sid)
+            author_id varchar(24) REFERENCES users(sid)
         )`)
 	if err != nil {
 		log.Printf("[INFO] Create table stories error: %s", err)
@@ -76,12 +76,23 @@ func initializeDB() *sql.DB {
             sid varchar(24) primary key,
             action varchar(24) NOT NULL,
             date timestamptz NOT NULL,
-            actor varchar(24) REFERENCES users(sid),
-            story varchar(24) REFERENCES stories(sid),
-            user2 varchar(24) REFERENCES users(sid)
+            actor_id varchar(24) REFERENCES users(sid),
+            story_id varchar(24) REFERENCES stories(sid),
+            user2_id varchar(24) REFERENCES users(sid)
         )`)
 	if err != nil {
 		log.Printf("[INFO] Create table activities error: %s", err)
+	}
+
+	_, err = db.Exec(`
+        CREATE TABLE IF NOT EXISTS followers(
+            user_id varchar(24) REFERENCES users(sid),
+            follower_id varchar(24) REFERENCES users(sid),
+            primary key (user_id, follower_id)
+        )
+    `)
+	if err != nil {
+		log.Printf("[INFO] Create table followers error: %s", err)
 	}
 
 	// Technically notifications can be computed from the activities,
@@ -95,14 +106,20 @@ func initializeDB() *sql.DB {
 	_, err = db.Exec(`
         CREATE TABLE IF NOT EXISTS notifications(
             id uuid primary key,
-            notified varchar(24) REFERENCES users(sid),
-            actor varchar(24) REFERENCES users(sid),
+            notified_id varchar(24) REFERENCES users(sid),
+            actor_id varchar(24) REFERENCES users(sid),
             action varchar(24) NOT NULL,
-            story varchar(24) REFERENCES stories(sid)
+            date timestamptz NOT NULL,
+            story_id varchar(24) REFERENCES stories(sid)
         )`)
 	if err != nil {
 		log.Printf("[INFO] Create table notifications error: %s", err)
 	}
+
+	// Note: It seems worthwhile to create tables for loves,
+	// comments, likes, etc in the future. For now let's use the activities
+	// table as the source of truth.
+
 	log.Printf("[DEBUG] Loading initial fixtures...")
 	hooked.LoadFixtures(db) // in loader.go
 	log.Printf("[DEBUG] Done loading fixtures")
@@ -112,5 +129,6 @@ func initializeDB() *sql.DB {
 func main() {
 	log.Println("Connecting to db...")
 	db := initializeDB()
+	log.Printf("[DEBUG] Ready to serve")
 	hooked.Serve(db, "8086")
 }
