@@ -21,7 +21,27 @@ const (
 
 func getNotificationsHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	w.Write([]byte("Tried to get notification for id = " + vars["id"]))
+	log.Printf("[DEBUG] Getting notifications for user %s", vars["id"])
+	user, err := getUser(db, vars["id"])
+	if err != nil {
+		log.Printf("[ERROR] event=get-user err=%q", err)
+		http.Error(w, "Bad request: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	notifications, err := getNotifications(db, user)
+	if err != nil {
+		log.Printf("[ERROR] event=get-notifications err=%q", err)
+		http.Error(w, "Error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	ret, err := json.MarshalIndent(notifications, "", "\t")
+	if err != nil {
+		log.Printf("[ERROR] event=marshal-notifications err=%q", err)
+		http.Error(w, "Error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", JSONContentType)
+	w.Write(ret)
 }
 
 func sendSuccess(w http.ResponseWriter) {

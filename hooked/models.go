@@ -44,6 +44,14 @@ type Activity struct {
 	Story  string `json:"story"`
 }
 
+type Notification struct {
+	Action string `json:"action"`
+	Actor  string `json:"actor"`
+	Story  string `json:"story,omitempty"`
+	User2  string `json:"user2,omitempty"`
+	Date   string `json:"date"`
+}
+
 // Generate a 24-character ID. The fixtures use 24-character IDs so
 // let's truncate a UUID for now and hope that's enough.
 func genID() string {
@@ -147,6 +155,15 @@ func createNotifications(db *sql.DB, a *Activity) error {
 		if err != nil {
 			return err
 		}
+		// Also add to followers table
+		_, err = db.Query(`
+            INSERT INTO followers (user_id, follower_id)
+            VALUES ($1, $2)
+            ON CONFLICT DO NOTHING
+        `, a.User2, a.Actor)
+		if err != nil {
+			return err
+		}
 		// no need for break, switch doesn't fallthrough in Go
 	case ActionRead, ActionLove /* 😍 */, ActionWrite, ActionComment:
 		// Add notification to actor's followers.
@@ -198,6 +215,7 @@ func (a *Activity) Save(db *sql.DB) error {
 	return err
 }
 
+// PushNotify executes a Push Notification for the given activity.
 func (a *Activity) PushNotify() error {
 
 	/*
@@ -254,7 +272,8 @@ func (a *Activity) PushNotify() error {
 		if err != nil {
 			return err
 		}
-		log.Printf("[DEBUG] Sending push notification to all of the writer's %v followers",
+		log.Printf(
+			"[DEBUG] Sending push notification to all of the writer's %v followers",
 			len(followers))
 		push.NotifyMultiple(followers,
 			author.name()+" just wrote a cool story. Check it out!")
@@ -270,6 +289,9 @@ func getUser(db *sql.DB, id string) (*User, error) {
 		"SELECT firstname, lastname FROM users WHERE sid = $1", id).Scan(
 		&firstname, &lastname)
 	if err != nil {
+		if strings.Contains(err.Error(), "no rows") {
+			return nil, errors.New("User with that ID not found.")
+		}
 		return nil, err
 	}
 	return &User{
@@ -286,6 +308,9 @@ func getStory(db *sql.DB, id string) (*Story, error) {
 		"SELECT title, author_id FROM stories WHERE sid = $1", id).Scan(
 		&title, &author)
 	if err != nil {
+		if strings.Contains(err.Error(), "no rows") {
+			return nil, errors.New("Story with that ID not found.")
+		}
 		return nil, err
 	}
 	return &Story{
@@ -312,4 +337,45 @@ func getFollowerIDs(db *sql.DB, id string) ([]string, error) {
 		ids = append(ids, id)
 	}
 	return ids, nil
+}
+
+func getNotifications(db *sql.DB, user *User) ([]Notification, error) {
+	notifications := []Notification{}
+	rows, err := db.Query(`
+        SELECT actor_id, story_id, action, date
+        FROM notifications
+        WHERE notified_id = $1
+        ORDER BY date
+    `, user.ID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var actorID string
+		var storyID sql.NullString
+		var action string
+		var date time.Time
+		err = rows.Scan(&actorID, &storyID, &action, &date)
+		if err != nil {
+			return nil, err
+		}
+		notification := Notification{
+			Action: action,
+			Actor:  actorID,
+			Date:   date.Format(HookedRFC),
+		}
+		if !storyID.Valid {
+			notification.Story = "" // Will be removed from struct by omitempty
+		} else {
+			notification.Story = storyID.String
+		}
+		if action == ActionFollow {
+			// The user is the followed (who would get the notification),
+			// actor is the follower
+			notification.User2 = user.ID
+		}
+		notifications = append(notifications, notification)
+	}
+	return notifications, nil
 }
