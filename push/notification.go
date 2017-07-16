@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-func Notify(userid string, notification string) {
+func notify(userid string, notification string) {
 	delimiter := strings.Repeat("-", 30) + "\n"
 	templateStr := delimiter + fmt.Sprintf(
 		"[Push Notification for user %v]\n", userid) +
@@ -17,15 +17,19 @@ func Notify(userid string, notification string) {
 	fmt.Println(templateStr)
 }
 
-func NotifyMultiple(userids []string, notification string) {
+func Notify(userid string, notification string) {
 	// This goroutine, and the fact that the API in general uses goroutines
 	// for HTTP requests, allows the API to scale more easily. We don't block
 	// until all push notifications are delivered, instead we hand them off
 	// in a goroutine and exit. This could be a separate microservice
 	// or job queue later on.
+	go func() {
+		notify(userid, notification)
+	}()
+}
+
+func NotifyMultiple(userids []string, notification string) {
 	for _, userid := range userids {
-		go func(uid string, notification string) {
-			Notify(uid, notification)
-		}(userid, notification)
+		Notify(userid, notification)
 	}
 }

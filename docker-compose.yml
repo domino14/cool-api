@@ -23,7 +23,7 @@ services:
     volumes:
       - ./:/go/src/github.com/domino14/cool-api
     working_dir: /go/src/github.com/domino14/cool-api
-    command: sh -c "go get && go run main.go"
+    command: sh -c "sleep 5 && go get && go run main.go"
     ports:
       - 8086:8086
     networks:
