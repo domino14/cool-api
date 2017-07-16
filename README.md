@@ -1,5 +1,10 @@
 # cool-api
 
+### Stack
+
+- Go 1.8 and PostgreSQL. 
+- Docker 
+
 ### Installation
 
 - `git clone` this repository
